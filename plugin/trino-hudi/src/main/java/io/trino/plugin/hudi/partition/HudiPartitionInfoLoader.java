@@ -16,7 +16,9 @@ package io.trino.plugin.hudi.partition;
 import io.airlift.concurrent.MoreFutures;
 import io.trino.plugin.hive.HivePartitionKey;
 import io.trino.plugin.hive.util.AsyncQueue;
-import io.trino.plugin.hudi.HudiFileStatus;
+import io.trino.plugin.hudi.HudiTableHandle;
+import io.trino.plugin.hudi.files.FileSlice;
+import io.trino.plugin.hudi.model.HudiTableType;
 import io.trino.plugin.hudi.query.HudiDirectoryLister;
 import io.trino.plugin.hudi.split.HudiSplitFactory;
 import io.trino.spi.connector.ConnectorSplit;
@@ -24,6 +26,7 @@ import io.trino.spi.connector.ConnectorSplit;
 import java.util.Deque;
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.Stream;
 
 public class HudiPartitionInfoLoader
         implements Runnable
@@ -32,20 +35,27 @@ public class HudiPartitionInfoLoader
     private final HudiSplitFactory hudiSplitFactory;
     private final AsyncQueue<ConnectorSplit> asyncQueue;
     private final Deque<String> partitionQueue;
+    private final String commitTime;
 
     private boolean isRunning;
 
-    public HudiPartitionInfoLoader(
+    private final HudiTableHandle tableHandle;
+
+    public  HudiPartitionInfoLoader(
             HudiDirectoryLister hudiDirectoryLister,
             HudiSplitFactory hudiSplitFactory,
             AsyncQueue<ConnectorSplit> asyncQueue,
-            Deque<String> partitionQueue)
+            Deque<String> partitionQueue,
+            String commitTime,
+            HudiTableHandle tableHandle)
     {
         this.hudiDirectoryLister = hudiDirectoryLister;
         this.hudiSplitFactory = hudiSplitFactory;
         this.asyncQueue = asyncQueue;
         this.partitionQueue = partitionQueue;
+        this.commitTime = commitTime;
         this.isRunning = true;
+        this.tableHandle = tableHandle;
     }
 
     @Override
@@ -66,13 +76,36 @@ public class HudiPartitionInfoLoader
         partitionInfo.ifPresent(hudiPartitionInfo -> {
             if (hudiPartitionInfo.doesMatchPredicates() || partitionName.equals("")) {
                 List<HivePartitionKey> partitionKeys = hudiPartitionInfo.getHivePartitionKeys();
-                List<HudiFileStatus> partitionFiles = hudiDirectoryLister.listStatus(hudiPartitionInfo);
-                partitionFiles.stream()
-                        .flatMap(fileStatus -> hudiSplitFactory.createSplits(partitionKeys, fileStatus).stream())
+
+                org.apache.hudi.common.table.view.AbstractTableFileSystemView
+                Stream<org.apache.hudi.common.model.FileSlice> fileSlices = HudiTableType.MOR.equals(table.getTableType()) ?
+                        fsView.getLatestMergedFileSlicesBeforeOrOn(relativePartitionPath, latestInstant) :
+                        fsView.getLatestFileSlicesBeforeOrOn(relativePartitionPath, latestInstant, false);
+
+
+                List<FileSlice> fileSlices = hudiDirectoryLister.listFileSlicesBeforeOn(hudiPartitionInfo, commitTime);
+
+                HudiTableType.MERGE_ON_READ.equals(tableHandle.getTableType()) ?
+
+                fileSlices.stream()
+                        .flatMap(fileSlice -> hudiSplitFactory.createSplits(partitionKeys, fileSlice, commitTime).stream())
                         .map(asyncQueue::offer)
                         .forEachOrdered(MoreFutures::getFutureValue);
+
+                import org.apache.hudi.common.table.view.HoodieTableFileSystemView
             }
         });
+
+        HudiPartition hudiPartition = getHudiPartition(metastore, metastoreContext, layout, partitionName);
+        Path partitionPath = new Path(hudiPartition.getStorage().getLocation());
+        String relativePartitionPath = FSUtils.getRelativePartitionPath(tablePath, partitionPath);
+        Stream<FileSlice> fileSlices = HudiTableType.MOR.equals(table.getTableType()) ?
+                fsView.getLatestMergedFileSlicesBeforeOrOn(relativePartitionPath, latestInstant) :
+                fsView.getLatestFileSlicesBeforeOrOn(relativePartitionPath, latestInstant, false);
+        fileSlices.map(fileSlice -> createHudiSplit(table, fileSlice, latestInstant, hudiPartition, splitWeightProvider))
+                .filter(Optional::isPresent)
+                .map(Optional::get)
+                .forEach(asyncQueue::offer);
     }
 
     public void stopRunning()

@@ -22,6 +22,7 @@ import io.trino.plugin.hive.HiveColumnHandle;
 import io.trino.plugin.hive.metastore.Column;
 import io.trino.plugin.hive.metastore.HiveMetastore;
 import io.trino.plugin.hive.metastore.Table;
+import io.trino.plugin.hudi.model.HudiTableType;
 import io.trino.spi.TrinoException;
 import io.trino.spi.connector.ColumnHandle;
 import io.trino.spi.connector.ColumnMetadata;
@@ -52,16 +53,13 @@ import static com.google.common.collect.ImmutableList.toImmutableList;
 import static com.google.common.collect.ImmutableMap.toImmutableMap;
 import static io.trino.plugin.hive.HiveMetadata.TABLE_COMMENT;
 import static io.trino.plugin.hive.HiveTimestampPrecision.NANOSECONDS;
-import static io.trino.plugin.hive.util.HiveUtil.columnMetadataGetter;
-import static io.trino.plugin.hive.util.HiveUtil.hiveColumnHandles;
-import static io.trino.plugin.hive.util.HiveUtil.isHiveSystemSchema;
-import static io.trino.plugin.hive.util.HiveUtil.isHudiTable;
+import static io.trino.plugin.hive.metastore.MetastoreUtil.getHiveSchema;
+import static io.trino.plugin.hive.util.HiveUtil.*;
 import static io.trino.plugin.hudi.HudiErrorCode.HUDI_BAD_DATA;
 import static io.trino.plugin.hudi.HudiSessionProperties.getColumnsToHide;
 import static io.trino.plugin.hudi.HudiTableProperties.LOCATION_PROPERTY;
 import static io.trino.plugin.hudi.HudiTableProperties.PARTITIONED_BY_PROPERTY;
 import static io.trino.plugin.hudi.HudiUtil.hudiMetadataExists;
-import static io.trino.plugin.hudi.model.HudiTableType.COPY_ON_WRITE;
 import static io.trino.spi.StandardErrorCode.UNSUPPORTED_TABLE_TYPE;
 import static io.trino.spi.connector.SchemaTableName.schemaTableName;
 import static java.lang.String.format;
@@ -109,13 +107,18 @@ public class HudiMetadata
             throw new TrinoException(HUDI_BAD_DATA, "Location of table %s does not contain Hudi table metadata: %s".formatted(tableName, location));
         }
 
+        String inputFormat = table.get().getStorage().getStorageFormat().getInputFormat();
+        HudiTableType hudiTableType = HudiTableType.fromInputFormat(inputFormat);
+
         return new HudiTableHandle(
                 tableName.getSchemaName(),
                 tableName.getTableName(),
                 table.get().getStorage().getLocation(),
-                COPY_ON_WRITE,
+                hudiTableType,
+                getPartitionKeyColumnHandles(table.get(), typeManager),
                 TupleDomain.all(),
-                TupleDomain.all());
+                TupleDomain.all(),
+                getHiveSchema(table.get()));
     }
 
     @Override

@@ -13,14 +13,18 @@
  */
 package io.trino.plugin.hudi.split;
 
+import io.airlift.log.Logger;
 import com.google.common.util.concurrent.Futures;
+import io.trino.plugin.hive.metastore.HiveMetastore;
 import io.trino.plugin.hive.util.AsyncQueue;
 import io.trino.plugin.hudi.HudiTableHandle;
 import io.trino.plugin.hudi.partition.HudiPartitionInfoLoader;
-import io.trino.plugin.hudi.query.HudiDirectoryLister;
+import io.trino.plugin.hudi.partition.HudiPartitionSplitGenerator;
 import io.trino.spi.TrinoException;
 import io.trino.spi.connector.ConnectorSession;
 import io.trino.spi.connector.ConnectorSplit;
+import org.apache.hudi.common.table.view.HoodieTableFileSystemView;
+import org.apache.hudi.common.util.HoodieTimer;
 
 import java.util.ArrayList;
 import java.util.Deque;
@@ -37,40 +41,52 @@ import static java.util.Objects.requireNonNull;
 public class HudiBackgroundSplitLoader
         implements Runnable
 {
-    private final HudiDirectoryLister hudiDirectoryLister;
+    private static final Logger log = Logger.get(HudiBackgroundSplitLoader.class);
+    private final ConnectorSession session;
     private final AsyncQueue<ConnectorSplit> asyncQueue;
     private final Executor splitGeneratorExecutor;
     private final int splitGeneratorNumThreads;
-    private final HudiSplitFactory hudiSplitFactory;
     private final List<String> partitions;
+    private final String latestInstant;
+    private final HiveMetastore metastore;
+    private final HudiTableHandle tableHandle;
+    private final HoodieTableFileSystemView fsView;
 
     public HudiBackgroundSplitLoader(
             ConnectorSession session,
-            HudiTableHandle tableHandle,
-            HudiDirectoryLister hudiDirectoryLister,
-            AsyncQueue<ConnectorSplit> asyncQueue,
+            HiveMetastore metastore,
             Executor splitGeneratorExecutor,
-            HudiSplitWeightProvider hudiSplitWeightProvider,
-            List<String> partitions)
+            HudiTableHandle tableHandle,
+            HoodieTableFileSystemView fsView,
+            AsyncQueue<ConnectorSplit> asyncQueue,
+            List<String> partitions,
+            String latestInstant)
     {
-        this.hudiDirectoryLister = requireNonNull(hudiDirectoryLister, "hudiDirectoryLister is null");
+        this.session = requireNonNull(session, "session is null");
+        this.metastore = requireNonNull(metastore, "metastore is null");
+        this.tableHandle = requireNonNull(tableHandle, "tableHandle is null");
+        this.fsView = requireNonNull(fsView, "fsView is null");
         this.asyncQueue = requireNonNull(asyncQueue, "asyncQueue is null");
+        this.partitions = requireNonNull(partitions, "partitions is null");
+        this.latestInstant = requireNonNull(latestInstant, "latestInstant is null");
         this.splitGeneratorExecutor = requireNonNull(splitGeneratorExecutor, "splitGeneratorExecutorService is null");
         this.splitGeneratorNumThreads = getSplitGeneratorParallelism(session);
-        this.hudiSplitFactory = new HudiSplitFactory(tableHandle, hudiSplitWeightProvider);
-        this.partitions = requireNonNull(partitions, "partitions is null");
+
     }
 
     @Override
     public void run()
     {
+        HoodieTimer timer = new HoodieTimer().startTimer();
         Deque<String> partitionQueue = new ConcurrentLinkedDeque<>(partitions);
         List<HudiPartitionInfoLoader> splitGeneratorList = new ArrayList<>();
         List<Future> splitGeneratorFutures = new ArrayList<>();
 
         // Start a number of partition split generators to generate the splits in parallel
         for (int i = 0; i < splitGeneratorNumThreads; i++) {
-            HudiPartitionInfoLoader generator = new HudiPartitionInfoLoader(hudiDirectoryLister, hudiSplitFactory, asyncQueue, partitionQueue);
+            //HudiPartitionInfoLoader generator = new HudiPartitionInfoLoader(hudiDirectoryLister, hudiSplitFactory, asyncQueue, partitionQueue, commitTime, tableHandle);
+            HudiPartitionSplitGenerator generator = new HudiPartitionSplitGenerator(
+                    session, metastore, tableHandle, fsView, asyncQueue, partitionQueue, latestInstant);
             splitGeneratorList.add(generator);
             splitGeneratorFutures.add(Futures.submit(generator, splitGeneratorExecutor));
         }
@@ -90,5 +106,6 @@ public class HudiBackgroundSplitLoader
             }
         }
         asyncQueue.finish();
+        log.debug("Finished getting all splits in %d ms", timer.endTimer());
     }
 }

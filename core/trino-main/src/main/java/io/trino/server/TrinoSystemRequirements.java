@@ -47,7 +47,7 @@ final class TrinoSystemRequirements
         verifyByteOrder();
         verifyUsingG1Gc();
         verifyFileDescriptor();
-        verifySlice();
+        //verifySlice();
     }
 
     private static void verify64BitJvm()

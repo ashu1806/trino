@@ -36,7 +36,7 @@ import static io.trino.testing.TestingSession.testSessionBuilder;
 
 public final class HudiQueryRunner
 {
-    private static final String SCHEMA_NAME = "tests";
+    private static final String SCHEMA_NAME = "default";
 
     private HudiQueryRunner() {}
 
