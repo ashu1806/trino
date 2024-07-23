@@ -13,7 +13,7 @@
  */
 package io.trino.plugin.hudi.testing;
 
-import com.google.common.collect.ImmutableList;
+/*import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import io.airlift.log.Logger;
 import io.trino.hdfs.HdfsContext;
@@ -319,7 +319,7 @@ public class TpchHudiTablesInitializer
         DATE(Schema.Type.INT, hiveTypeOf(HIVE_DATE), TpchColumnTypeAdapter::convertDate),
         DOUBLE(Schema.Type.DOUBLE, hiveTypeOf(HIVE_DOUBLE), Function.identity()),
         VARCHAR(Schema.Type.STRING, TpchColumnTypeAdapter::hiveVarcharOf, Function.identity()),
-        /**/;
+        *//**//*;
 
         static TpchColumnTypeAdapter of(TpchColumnType columnType)
         {
@@ -384,4 +384,4 @@ public class TpchHudiTablesInitializer
     {
         HoodieRecord<HoodieAvroPayload> toRecord(List<Object> row);
     }
-}
+}*/

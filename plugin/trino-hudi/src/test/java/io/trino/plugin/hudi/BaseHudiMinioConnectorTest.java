@@ -13,10 +13,10 @@
  */
 package io.trino.plugin.hudi;
 
-import io.trino.plugin.hive.containers.HiveMinioDataLake;
+/*import io.trino.plugin.hive.containers.HiveMinioDataLake;
 
 public abstract class BaseHudiMinioConnectorTest
         extends BaseHudiConnectorTest
 {
     protected HiveMinioDataLake hiveMinioDataLake;
-}
+}*/

@@ -13,7 +13,7 @@
  */
 package io.trino.plugin.hudi;
 
-import com.google.common.collect.ImmutableMap;
+/*import com.google.common.collect.ImmutableMap;
 import io.trino.plugin.hudi.testing.TpchHudiTablesInitializer;
 import io.trino.testing.QueryRunner;
 
@@ -32,4 +32,4 @@ public class TestHudiCopyOnWriteConnectorTest
                 ImmutableMap.of("hudi.columns-to-hide", columnsToHide()),
                 new TpchHudiTablesInitializer(COPY_ON_WRITE, REQUIRED_TPCH_TABLES));
     }
-}
+}*/

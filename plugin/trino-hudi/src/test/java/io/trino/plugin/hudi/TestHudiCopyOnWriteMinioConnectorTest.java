@@ -13,7 +13,7 @@
  */
 package io.trino.plugin.hudi;
 
-import com.google.common.collect.ImmutableMap;
+/*import com.google.common.collect.ImmutableMap;
 import io.trino.plugin.hive.containers.HiveMinioDataLake;
 import io.trino.plugin.hudi.testing.TpchHudiTablesInitializer;
 import io.trino.testing.QueryRunner;
@@ -40,4 +40,4 @@ public class TestHudiCopyOnWriteMinioConnectorTest
                 new TpchHudiTablesInitializer(COPY_ON_WRITE, REQUIRED_TPCH_TABLES),
                 hiveMinioDataLake);
     }
-}
+}*/

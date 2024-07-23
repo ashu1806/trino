@@ -11,7 +11,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.trino.plugin.hudi.partition;
+/*package io.trino.plugin.hudi.partition;
 
 import io.airlift.concurrent.MoreFutures;
 import io.trino.plugin.hive.HivePartitionKey;
@@ -79,4 +79,4 @@ public class HudiPartitionInfoLoader
     {
         this.isRunning = false;
     }
-}
+}*/

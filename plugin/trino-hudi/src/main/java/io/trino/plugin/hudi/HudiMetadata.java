@@ -19,9 +19,12 @@ import io.trino.filesystem.Location;
 import io.trino.filesystem.TrinoFileSystemFactory;
 import io.trino.plugin.base.classloader.ClassLoaderSafeSystemTable;
 import io.trino.plugin.hive.HiveColumnHandle;
+import io.trino.plugin.hive.HiveType;
 import io.trino.plugin.hive.metastore.Column;
 import io.trino.plugin.hive.metastore.HiveMetastore;
+import io.trino.plugin.hive.metastore.MetastoreUtil;
 import io.trino.plugin.hive.metastore.Table;
+import io.trino.plugin.hudi.model.HudiTableType;
 import io.trino.spi.TrinoException;
 import io.trino.spi.connector.ColumnHandle;
 import io.trino.spi.connector.ColumnMetadata;
@@ -41,15 +44,21 @@ import io.trino.spi.type.TypeManager;
 
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Properties;
+import java.util.Set;
 import java.util.function.Function;
+import java.util.stream.Stream;
 
 import static com.google.common.base.Strings.isNullOrEmpty;
 import static com.google.common.collect.ImmutableList.toImmutableList;
 import static com.google.common.collect.ImmutableMap.toImmutableMap;
+import static com.google.common.collect.ImmutableSet.toImmutableSet;
+import static io.trino.plugin.hive.HiveColumnHandle.createBaseColumn;
 import static io.trino.plugin.hive.HiveMetadata.TABLE_COMMENT;
 import static io.trino.plugin.hive.HiveTimestampPrecision.NANOSECONDS;
 import static io.trino.plugin.hive.util.HiveUtil.columnMetadataGetter;
@@ -58,10 +67,12 @@ import static io.trino.plugin.hive.util.HiveUtil.isHiveSystemSchema;
 import static io.trino.plugin.hive.util.HiveUtil.isHudiTable;
 import static io.trino.plugin.hudi.HudiErrorCode.HUDI_BAD_DATA;
 import static io.trino.plugin.hudi.HudiSessionProperties.getColumnsToHide;
+import static io.trino.plugin.hudi.HudiSessionProperties.isQueryPartitionFilterRequired;
 import static io.trino.plugin.hudi.HudiTableProperties.LOCATION_PROPERTY;
 import static io.trino.plugin.hudi.HudiTableProperties.PARTITIONED_BY_PROPERTY;
 import static io.trino.plugin.hudi.HudiUtil.hudiMetadataExists;
-import static io.trino.plugin.hudi.model.HudiTableType.COPY_ON_WRITE;
+import static io.trino.spi.StandardErrorCode.NOT_SUPPORTED;
+import static io.trino.spi.StandardErrorCode.QUERY_REJECTED;
 import static io.trino.spi.StandardErrorCode.UNSUPPORTED_TABLE_TYPE;
 import static io.trino.spi.connector.SchemaTableName.schemaTableName;
 import static java.lang.String.format;
@@ -109,13 +120,24 @@ public class HudiMetadata
             throw new TrinoException(HUDI_BAD_DATA, "Location of table %s does not contain Hudi table metadata: %s".formatted(tableName, location));
         }
 
+        String inputFormat = table.get().getStorage().getStorageFormat().getInputFormat();
+        HudiTableType hudiTableType = HudiTableType.fromInputFormat(inputFormat);
+
+        Properties hiveSchemaProperties = MetastoreUtil.getHiveSchema(table.get());
+        Map<String, String> hiveSchemaMap = new HashMap<>();
+        for (String propertyName : hiveSchemaProperties.stringPropertyNames()) {
+            hiveSchemaMap.put(propertyName, hiveSchemaProperties.getProperty(propertyName));
+        }
+
         return new HudiTableHandle(
                 tableName.getSchemaName(),
                 tableName.getTableName(),
                 table.get().getStorage().getLocation(),
-                COPY_ON_WRITE,
+                hudiTableType,
+                getPartitionKeyColumnHandles(table.get(), typeManager),
                 TupleDomain.all(),
-                TupleDomain.all());
+                TupleDomain.all(),
+                hiveSchemaMap);
     }
 
     @Override
@@ -162,18 +184,37 @@ public class HudiMetadata
     {
         HudiTableHandle handle = (HudiTableHandle) tableHandle;
         HudiPredicates predicates = HudiPredicates.from(constraint.getSummary());
+        TupleDomain<HiveColumnHandle> regularColumnPredicates = predicates.getRegularColumnPredicates();
+        TupleDomain<HiveColumnHandle> partitionColumnPredicates = predicates.getPartitionColumnPredicates();
+
+        // TODO Since the constraint#predicate isn't utilized during split generation. So,
+        //  Let's not add constraint#predicateColumns to newConstraintColumns.
+        Set<HiveColumnHandle> newConstraintColumns = Stream.concat(
+                        Stream.concat(
+                                regularColumnPredicates.getDomains().stream()
+                                        .map(Map::keySet)
+                                        .flatMap(Collection::stream),
+                                partitionColumnPredicates.getDomains().stream()
+                                        .map(Map::keySet)
+                                        .flatMap(Collection::stream)),
+                        handle.getConstraintColumns().stream())
+                .collect(toImmutableSet());
+
         HudiTableHandle newHudiTableHandle = handle.applyPredicates(
-                predicates.getPartitionColumnPredicates(),
-                predicates.getRegularColumnPredicates());
+                newConstraintColumns,
+                partitionColumnPredicates,
+                regularColumnPredicates);
 
         if (handle.getPartitionPredicates().equals(newHudiTableHandle.getPartitionPredicates())
-                && handle.getRegularPredicates().equals(newHudiTableHandle.getRegularPredicates())) {
+                && handle.getRegularPredicates().equals(newHudiTableHandle.getRegularPredicates())
+                && handle.getConstraintColumns().equals(newHudiTableHandle.getConstraintColumns())) {
             return Optional.empty();
         }
 
         return Optional.of(new ConstraintApplicationResult<>(
                 newHudiTableHandle,
                 newHudiTableHandle.getRegularPredicates().transformKeys(ColumnHandle.class::cast),
+                constraint.getExpression(),
                 false));
     }
 
@@ -221,6 +262,27 @@ public class HudiMetadata
                 .map(table -> getTableColumnMetadata(session, table))
                 .flatMap(Optional::stream)
                 .iterator();
+    }
+
+    @Override
+    public void validateScan(ConnectorSession session, ConnectorTableHandle handle)
+    {
+        HudiTableHandle hudiTableHandle = (HudiTableHandle) handle;
+        if (isQueryPartitionFilterRequired(session)) {
+            if (!hudiTableHandle.getPartitionColumns().isEmpty()) {
+                Set<String> partitionColumns = hudiTableHandle.getPartitionColumns().stream()
+                        .map(HiveColumnHandle::getName)
+                        .collect(toImmutableSet());
+                Set<String> constraintColumns = hudiTableHandle.getConstraintColumns().stream()
+                        .map(HiveColumnHandle::getBaseColumnName)
+                        .collect(toImmutableSet());
+                if (Collections.disjoint(constraintColumns, partitionColumns)) {
+                    throw new TrinoException(
+                            QUERY_REJECTED,
+                            format("Filter required on %s for at least one of the partition columns: %s", hudiTableHandle.getSchemaTableName(), String.join(", ", partitionColumns)));
+                }
+            }
+        }
     }
 
     HiveMetastore getMetastore()
@@ -274,5 +336,35 @@ public class HudiMetadata
                 .filter(name -> !isHiveSystemSchema(name))
                 .map(Collections::singletonList)
                 .orElseGet(() -> listSchemaNames(session));
+    }
+
+    public static List<HiveColumnHandle> getPartitionKeyColumnHandles(Table table, TypeManager typeManager)
+    {
+        ImmutableList.Builder<HiveColumnHandle> columns = ImmutableList.builder();
+
+        List<Column> partitionKeys = table.getPartitionColumns();
+        for (Column field : partitionKeys) {
+            HiveType hiveType = field.getType();
+            if (!hiveType.isSupportedType(table.getStorage().getStorageFormat())) {
+                throw new TrinoException(NOT_SUPPORTED, format("Unsupported Hive type %s found in partition keys of table %s.%s", hiveType, table.getDatabaseName(), table.getTableName()));
+            }
+            columns.add(createBaseColumn(field.getName(), -1, hiveType, typeManager.getType(hiveType.getTypeSignature()), HiveColumnHandle.ColumnType.PARTITION_KEY, field.getComment()));
+        }
+
+        return columns.build();
+    }
+
+    public static List<HiveColumnHandle> getDataColumnHandles(Table table, TypeManager typeManager)
+    {
+        List<Column> dataColumns = table.getDataColumns();
+        ImmutableList.Builder<HiveColumnHandle> builder = ImmutableList.builder();
+        for (Column column : dataColumns) {
+            HiveType hiveType = column.getType();
+            if (!hiveType.isSupportedType(table.getStorage().getStorageFormat())) {
+                throw new TrinoException(NOT_SUPPORTED, format("Unsupported Hive type %s found of table %s.%s", hiveType, table.getDatabaseName(), table.getTableName()));
+            }
+            builder.add(createBaseColumn(column.getName(), -1, hiveType, typeManager.getType(hiveType.getTypeSignature()), HiveColumnHandle.ColumnType.REGULAR, column.getComment()));
+        }
+        return builder.build();
     }
 }

@@ -18,6 +18,8 @@ import com.google.common.collect.ImmutableMap;
 import io.trino.filesystem.FileIterator;
 import io.trino.filesystem.Location;
 import io.trino.filesystem.TrinoFileSystem;
+import io.trino.hdfs.HdfsContext;
+import io.trino.hdfs.HdfsEnvironment;
 import io.trino.plugin.hive.HiveColumnHandle;
 import io.trino.plugin.hive.HivePartition;
 import io.trino.plugin.hive.HivePartitionKey;
@@ -27,11 +29,14 @@ import io.trino.plugin.hudi.model.HudiFileFormat;
 import io.trino.plugin.hudi.table.HudiTableMetaClient;
 import io.trino.spi.TrinoException;
 import io.trino.spi.connector.ColumnHandle;
+import io.trino.spi.connector.ConnectorSession;
 import io.trino.spi.connector.SchemaTableName;
 import io.trino.spi.predicate.Domain;
 import io.trino.spi.predicate.NullableValue;
 import io.trino.spi.predicate.TupleDomain;
 import io.trino.spi.type.Type;
+import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.fs.Path;
 
 import java.io.IOException;
 import java.util.List;
@@ -47,6 +52,12 @@ import static java.util.stream.Collectors.toList;
 
 public final class HudiUtil
 {
+    // Input formats class names are listed below as String due to hudi-hadoop-mr dependency is not in the context of trino-hive plugin
+    public static final String HUDI_PARQUET_INPUT_FORMAT = "org.apache.hudi.hadoop.HoodieParquetInputFormat";
+    public static final String HUDI_PARQUET_REALTIME_INPUT_FORMAT = "org.apache.hudi.hadoop.realtime.HoodieParquetRealtimeInputFormat";
+    public static final String HUDI_INPUT_FORMAT = "com.uber.hoodie.hadoop.HoodieInputFormat";
+    public static final String HUDI_REALTIME_INPUT_FORMAT = "com.uber.hoodie.hadoop.realtime.HoodieRealtimeInputFormat";
+
     private HudiUtil() {}
 
     public static HudiFileFormat getHudiFileFormat(String path)
@@ -171,5 +182,16 @@ public final class HudiUtil
                 .setTrinoFileSystem(fileSystem)
                 .setBasePath(Location.of(basePath))
                 .build();
+    }
+
+    public static FileSystem getFileSystem(ConnectorSession session, HudiTableHandle table, HdfsEnvironment hdfsEnvironment)
+    {
+        HdfsContext hdfsContext = new HdfsContext(session);
+        try {
+            return hdfsEnvironment.getFileSystem(hdfsContext, new Path(table.getBasePath()));
+        }
+        catch (IOException e) {
+            throw new TrinoException(HUDI_FILESYSTEM_ERROR, "Could not open file system for " + table, e);
+        }
     }
 }

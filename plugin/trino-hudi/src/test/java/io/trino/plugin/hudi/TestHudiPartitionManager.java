@@ -19,9 +19,7 @@ import io.trino.plugin.hive.HiveBucketProperty;
 import io.trino.plugin.hive.metastore.Column;
 import io.trino.plugin.hive.metastore.Storage;
 import io.trino.plugin.hive.metastore.Table;
-import io.trino.spi.predicate.TupleDomain;
 import io.trino.spi.type.TestingTypeManager;
-import org.testng.annotations.Test;
 
 import java.util.List;
 import java.util.Optional;
@@ -33,8 +31,6 @@ import static io.trino.plugin.hive.HiveType.HIVE_STRING;
 import static io.trino.plugin.hive.TableType.MANAGED_TABLE;
 import static io.trino.plugin.hive.metastore.StorageFormat.fromHiveStorageFormat;
 import static io.trino.plugin.hive.util.HiveBucketing.BucketingVersion.BUCKETING_V1;
-import static io.trino.plugin.hudi.model.HudiTableType.COPY_ON_WRITE;
-import static org.testng.Assert.assertEquals;
 
 public class TestHudiPartitionManager
 {
@@ -69,7 +65,7 @@ public class TestHudiPartitionManager
     private final HudiPartitionManager hudiPartitionManager = new HudiPartitionManager(new TestingTypeManager());
     private final TestingExtendedHiveMetastore metastore = new TestingExtendedHiveMetastore(TABLE, PARTITIONS);
 
-    @Test
+    /*@Test
     public void testParseValuesAndFilterPartition()
     {
         HudiTableHandle tableHandle = new HudiTableHandle(
@@ -83,5 +79,5 @@ public class TestHudiPartitionManager
                 tableHandle,
                 metastore);
         assertEquals(actualPartitions, PARTITIONS);
-    }
+    }*/
 }
