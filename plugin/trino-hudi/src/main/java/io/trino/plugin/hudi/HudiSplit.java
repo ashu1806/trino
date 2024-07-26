@@ -15,6 +15,7 @@ package io.trino.plugin.hudi;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.google.common.collect.ImmutableMap;
 import io.trino.plugin.hudi.files.HudiFile;
 import io.trino.plugin.hudi.partition.HudiPartition;
 import io.trino.spi.HostAddress;
@@ -94,10 +95,11 @@ public class HudiSplit
     @Override
     public boolean isRemotelyAccessible()
     {
-        return false;
+        return true;
     }
 
     @JsonProperty
+    @Override
     public List<HostAddress> getAddresses()
     {
         return addresses;
@@ -106,7 +108,10 @@ public class HudiSplit
     @Override
     public Object getInfo()
     {
-        return this;
+        return ImmutableMap.builder()
+                .put("baseFile", baseFile)
+                .put("logFiles", logFiles)
+                .buildOrThrow();
     }
 
     @JsonProperty

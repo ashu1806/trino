@@ -59,9 +59,11 @@ public class HudiPartitionSplitGenerator
     private final HoodieTableFileSystemView fsView;
     private final AsyncQueue<ConnectorSplit> asyncQueue;
     private final Deque<String> concurrentPartitionQueue;
+    //private final Queue<String> concurrentPartitionQueue;
     private final String latestInstant;
     private final HudiSplitWeightProvider splitWeightProvider;
     private final TypeManager typeManager;
+    private final ConnectorSession session;
 
     public HudiPartitionSplitGenerator(
             ConnectorSession session,
@@ -70,9 +72,11 @@ public class HudiPartitionSplitGenerator
             HoodieTableFileSystemView fsView,
             AsyncQueue<ConnectorSplit> asyncQueue,
             Deque<String> concurrentPartitionQueue,
+            //Queue<String> concurrentPartitionQueue,
             String latestInstant,
             TypeManager typeManager)
     {
+        this.session = requireNonNull(session, "session is null");
         this.metastore = requireNonNull(metastore, "metastore is null");
         this.tableHandle = requireNonNull(tableHandle, "layout is null");
         this.tablePath = new Path(tableHandle.getBasePath());
@@ -99,7 +103,7 @@ public class HudiPartitionSplitGenerator
 
     private void generateSplitsFromPartition(String partitionName)
     {
-        HudiPartition hudiPartition = getHudiPartition(metastore, tableHandle, partitionName, typeManager);
+        HudiPartition hudiPartition = getHudiPartition(metastore, tableHandle, partitionName, typeManager, session);
         Path partitionPath = new Path(hudiPartition.getStorage().getLocation());
         String relativePartitionPath = FSUtils.getRelativePartitionPath(tablePath, partitionPath);
 

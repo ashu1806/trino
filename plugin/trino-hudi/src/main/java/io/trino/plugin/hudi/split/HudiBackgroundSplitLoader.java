@@ -86,7 +86,6 @@ public class HudiBackgroundSplitLoader
 
         // Start a number of partition split generators to generate the splits in parallel
         for (int i = 0; i < splitGeneratorNumThreads; i++) {
-            //HudiPartitionInfoLoader generator = new HudiPartitionInfoLoader(hudiDirectoryLister, hudiSplitFactory, asyncQueue, partitionQueue, commitTime, tableHandle);
             HudiPartitionSplitGenerator generator = new HudiPartitionSplitGenerator(
                     session, metastore, tableHandle, fsView, asyncQueue, partitionQueue, latestInstant, typeManager);
             splitGeneratorList.add(generator);

@@ -188,8 +188,8 @@ public class HudiSessionProperties
         return session.getProperty(SPLIT_GENERATOR_PARALLELISM, Integer.class);
     }
 
-    public static boolean isQueryPartitionFilterRequired(ConnectorSession session)
+    /*public static boolean isQueryPartitionFilterRequired(ConnectorSession session)
     {
         return session.getProperty(QUERY_PARTITION_FILTER_REQUIRED, Boolean.class);
-    }
+    }*/
 }

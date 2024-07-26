@@ -15,13 +15,10 @@ package io.trino.plugin.hudi;
 
 import com.google.common.util.concurrent.Futures;
 import io.airlift.concurrent.BoundedExecutor;
-import io.airlift.units.DataSize;
 import io.trino.plugin.hive.metastore.HiveMetastore;
 import io.trino.plugin.hive.util.AsyncQueue;
 import io.trino.plugin.hive.util.ThrottledAsyncQueue;
 import io.trino.plugin.hudi.split.HudiBackgroundSplitLoader;
-import io.trino.plugin.hudi.split.HudiSplitWeightProvider;
-import io.trino.plugin.hudi.split.SizeBasedSplitWeightProvider;
 import io.trino.spi.TrinoException;
 import io.trino.spi.connector.ConnectorSession;
 import io.trino.spi.connector.ConnectorSplit;
@@ -39,10 +36,7 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import static com.google.common.util.concurrent.MoreExecutors.directExecutor;
 import static io.airlift.concurrent.MoreFutures.toCompletableFuture;
-import static io.trino.plugin.hudi.HudiSessionProperties.getMinimumAssignedSplitWeight;
 import static io.trino.plugin.hudi.HudiSessionProperties.getSplitGeneratorParallelism;
-import static io.trino.plugin.hudi.HudiSessionProperties.getStandardSplitWeightSize;
-import static io.trino.plugin.hudi.HudiSessionProperties.isSizeBasedSplitWeightsEnabled;
 
 public class HudiSplitSource
         implements ConnectorSplitSource
@@ -50,6 +44,7 @@ public class HudiSplitSource
     private final AsyncQueue<ConnectorSplit> queue;
     private final ScheduledFuture splitLoaderFuture;
     private final AtomicReference<TrinoException> trinoException = new AtomicReference<>();
+    private final HudiBackgroundSplitLoader splitLoader;
 
     public HudiSplitSource(
             ConnectorSession session,
@@ -77,7 +72,8 @@ public class HudiSplitSource
                 partitions);*/
 
         this.queue = new ThrottledAsyncQueue<>(maxSplitsPerSecond, maxOutstandingSplits, executor);
-        HudiBackgroundSplitLoader splitLoader = new HudiBackgroundSplitLoader(
+        //this.queue = new AsyncQueue<>(maxOutstandingSplits, executor);
+        this.splitLoader = new HudiBackgroundSplitLoader(
                 session,
                 metastore,
                 new BoundedExecutor(executor, getSplitGeneratorParallelism(session)),
@@ -115,15 +111,5 @@ public class HudiSplitSource
     public boolean isFinished()
     {
         return splitLoaderFuture.isDone() && queue.isFinished();
-    }
-
-    private static HudiSplitWeightProvider createSplitWeightProvider(ConnectorSession session)
-    {
-        if (isSizeBasedSplitWeightsEnabled(session)) {
-            DataSize standardSplitWeightSize = getStandardSplitWeightSize(session);
-            double minimumAssignedSplitWeight = getMinimumAssignedSplitWeight(session);
-            return new SizeBasedSplitWeightProvider(minimumAssignedSplitWeight, standardSplitWeightSize);
-        }
-        return HudiSplitWeightProvider.uniformStandardWeightProvider();
     }
 }

@@ -191,18 +191,12 @@ public class HudiPageSourceProvider
                 .collect(Collectors.toList());
 
         final ConnectorPageSource dataColumnPageSource;
+
         if (tableHandle.getTableType().equals(COPY_ON_WRITE)) {
             HudiFile baseFile = hudiSplit.getBaseFile().orElseThrow(() ->
                     new TrinoException(HUDI_CANNOT_OPEN_SPLIT, "Split without base file is invalid"));
 
             Path path = new Path(baseFile.getPath());
-            /*Configuration configuration = hdfsEnvironment.getConfiguration(
-                    new HdfsContext(session,
-                            tableHandle.getSchemaName(),
-                            tableHandle.getTableName(),
-                            baseFile.getPath(),
-                            false),
-                    path);*/
             Configuration configuration = hdfsEnvironment.getConfiguration(new HdfsContext(session), path);
 
             TrinoFileSystem fileSystem = fileSystemFactory.create(session);

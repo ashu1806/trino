@@ -25,6 +25,7 @@ import com.google.common.util.concurrent.UncheckedExecutionException;
 import com.google.errorprone.annotations.CanIgnoreReturnValue;
 import com.google.errorprone.annotations.Immutable;
 import com.google.errorprone.annotations.ThreadSafe;
+import io.airlift.log.Logger;
 import io.airlift.jmx.CacheStatsMBean;
 import io.airlift.units.Duration;
 import io.trino.cache.EvictableCacheBuilder;
@@ -63,6 +64,7 @@ import org.weakref.jmx.Nested;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -107,6 +109,7 @@ import static java.util.function.UnaryOperator.identity;
 public class CachingHiveMetastore
         implements HiveMetastore
 {
+    private static final Logger log = Logger.get(CachingHiveMetastore.class);
     public enum StatsRecording
     {
         ENABLED,
@@ -1000,16 +1003,33 @@ public class CachingHiveMetastore
             List<String> columnNames,
             TupleDomain<String> partitionKeysFilter)
     {
-        return getOptional(partitionFilterCache, partitionFilter(databaseName, tableName, columnNames, partitionKeysFilter));
+        log.debug("Fetching partition names for database: %s, table: %s, columns: %s, filter: %s",
+                databaseName, tableName, columnNames, partitionKeysFilter);
+        Optional<List<String>> cachedResult = getOptional(partitionFilterCache, partitionFilter(databaseName, tableName, columnNames, partitionKeysFilter));
+        if (cachedResult.isPresent()) {
+            log.debug("Cache hit for partition names: %s", cachedResult.get());
+        } else {
+            log.debug("Cache miss for partition names");
+        }
+        // Log the result
+        log.debug("Fetched partition names: %s", cachedResult.orElse(Collections.emptyList()));
+
+        return cachedResult;
+        //return getOptional(partitionFilterCache, partitionFilter(databaseName, tableName, columnNames, partitionKeysFilter));
     }
 
     private Optional<List<String>> loadPartitionNamesByFilter(PartitionFilter partitionFilter)
     {
-        return delegate.getPartitionNamesByFilter(
+        log.debug("Loading partition names from metastore with filter: %s", partitionFilter);
+        Optional<List<String>> result = delegate.getPartitionNamesByFilter(
                 partitionFilter.getHiveTableName().getDatabaseName(),
                 partitionFilter.getHiveTableName().getTableName(),
                 partitionFilter.getPartitionColumnNames(),
                 partitionFilter.getPartitionKeysFilter());
+        // Log the result
+        log.debug("Loaded partition names from metastore: %s", result.orElse(Collections.emptyList()));
+
+        return result;
     }
 
     @Override
