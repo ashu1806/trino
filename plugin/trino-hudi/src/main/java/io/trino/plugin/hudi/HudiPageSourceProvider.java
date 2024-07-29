@@ -19,7 +19,6 @@ import io.trino.filesystem.Location;
 import io.trino.filesystem.TrinoFileSystem;
 import io.trino.filesystem.TrinoFileSystemFactory;
 import io.trino.filesystem.TrinoInputFile;
-import io.trino.hdfs.HdfsContext;
 import io.trino.hdfs.HdfsEnvironment;
 import io.trino.parquet.ParquetCorruptionException;
 import io.trino.parquet.ParquetDataSource;
@@ -40,6 +39,7 @@ import io.trino.plugin.hive.metastore.Table;
 import io.trino.plugin.hive.parquet.ParquetReaderConfig;
 import io.trino.plugin.hive.parquet.TrinoParquetDataSource;
 import io.trino.plugin.hudi.files.HudiFile;
+import io.trino.plugin.hudi.model.HudiFileFormat;
 import io.trino.plugin.hudi.query.HudiRealTimeRecordCursor;
 import io.trino.spi.TrinoException;
 import io.trino.spi.block.Block;
@@ -60,8 +60,6 @@ import io.trino.spi.type.Decimals;
 import io.trino.spi.type.Type;
 import io.trino.spi.type.TypeManager;
 import io.trino.spi.type.TypeSignature;
-import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.fs.Path;
 import org.apache.parquet.column.ColumnDescriptor;
 import org.apache.parquet.hadoop.metadata.BlockMetaData;
 import org.apache.parquet.hadoop.metadata.FileMetaData;
@@ -105,8 +103,13 @@ import static io.trino.plugin.hudi.HudiErrorCode.HUDI_BAD_DATA;
 import static io.trino.plugin.hudi.HudiErrorCode.HUDI_CANNOT_OPEN_SPLIT;
 import static io.trino.plugin.hudi.HudiErrorCode.HUDI_CURSOR_ERROR;
 import static io.trino.plugin.hudi.HudiErrorCode.HUDI_INVALID_PARTITION_VALUE;
+import static io.trino.plugin.hudi.HudiErrorCode.HUDI_UNSUPPORTED_FILE_FORMAT;
 import static io.trino.plugin.hudi.HudiErrorCode.HUDI_UNSUPPORTED_TABLE_TYPE;
+import static io.trino.plugin.hudi.HudiSessionProperties.isParquetOptimizedNestedReaderEnabled;
+import static io.trino.plugin.hudi.HudiSessionProperties.isParquetOptimizedReaderEnabled;
 import static io.trino.plugin.hudi.HudiSessionProperties.shouldUseParquetColumnNames;
+import static io.trino.plugin.hudi.HudiUtil.buildPartitionKeys;
+import static io.trino.plugin.hudi.HudiUtil.getHudiFileFormat;
 import static io.trino.plugin.hudi.model.HudiTableType.COPY_ON_WRITE;
 import static io.trino.plugin.hudi.model.HudiTableType.MERGE_ON_READ;
 import static io.trino.spi.connector.SchemaTableName.schemaTableName;
@@ -190,33 +193,50 @@ public class HudiPageSourceProvider
                 .filter(columnHandle -> !columnHandle.isPartitionKey() && !columnHandle.isHidden())
                 .collect(Collectors.toList());
 
+        List<HivePartitionKey> hivePartitionKeys = buildPartitionKeys(table.getPartitionColumns(), hudiSplit.getPartition().getValues());
+
         final ConnectorPageSource dataColumnPageSource;
 
         if (tableHandle.getTableType().equals(COPY_ON_WRITE)) {
             HudiFile baseFile = hudiSplit.getBaseFile().orElseThrow(() ->
                     new TrinoException(HUDI_CANNOT_OPEN_SPLIT, "Split without base file is invalid"));
 
-            Path path = new Path(baseFile.getPath());
-            Configuration configuration = hdfsEnvironment.getConfiguration(new HdfsContext(session), path);
+            String path = baseFile.getPath();
+
+            HudiFileFormat hudiFileFormat = getHudiFileFormat(path);
+
+            if (!HudiFileFormat.PARQUET.equals(hudiFileFormat)) {
+                throw new TrinoException(HUDI_UNSUPPORTED_FILE_FORMAT, format("File format %s not supported", hudiFileFormat));
+            }
 
             TrinoFileSystem fileSystem = fileSystemFactory.create(session);
             TrinoInputFile inputFile = fileSystem.newInputFile(Location.of(baseFile.getPath()), baseFile.getLength());
 
             dataColumnPageSource = createPageSource(
-                    typeManager,
-                    hdfsEnvironment,
                     session,
-                    configuration,
-                    path,
-                    baseFile.getStart(),
-                    baseFile.getLength(),
                     regularColumns,
-                    TupleDomain.all(), // TODO: predicates
-                    dataSourceStats,
                     hudiSplit,
                     inputFile,
-                    options,
+                    dataSourceStats,
+                    options.withBatchColumnReaders(isParquetOptimizedReaderEnabled(session))
+                            .withBatchNestedColumnReaders(isParquetOptimizedNestedReaderEnabled(session)),
                     timeZone);
+
+            /*return new HudiPageSource(
+                    hiveColumns,
+                    hudiSplit.getPartition().getKeyValues(),
+                    dataColumnPageSource,
+                    session.getTimeZoneKey(),
+                    typeManager);*/
+
+            return new HudiPageSource(
+                    toPartitionName(hudiSplit.getPartition().getKeyValues()),
+                    hiveColumns,
+                    convertPartitionValues(hiveColumns, hivePartitionKeys), // create blocks for partition values
+                    dataColumnPageSource,
+                    path,
+                    hudiSplit.getSplitWeight().getRawValue(),
+                    Long.parseLong(hudiSplit.getInstantTime()));
         }
         else if (tableHandle.getTableType().equals(MERGE_ON_READ)) {
             Properties schema = MetastoreUtil.getHiveSchema(table);
@@ -225,50 +245,51 @@ public class HudiPageSourceProvider
                     session,
                     schema,
                     hudiSplit,
-                    hiveColumns,
+                    regularColumns,
                     ZoneId.of("UTC"), // TODO configurable
                     typeManager);
-            List<Type> types = hiveColumns.stream()
+
+            List<Type> types = regularColumns.stream()
                     .map(column -> column.getHiveType().getType(typeManager))
                     .collect(toImmutableList());
+
             dataColumnPageSource = new RecordPageSource(types, recordCursor);
+
+            return new HudiPageSource(
+                    toPartitionName(hudiSplit.getPartition().getKeyValues()),
+                    hiveColumns,
+                    convertPartitionValues(hiveColumns, hivePartitionKeys), // create blocks for partition values
+                    dataColumnPageSource,
+                    hudiSplit.getBaseFile().get().getPath(),
+                    hudiSplit.getSplitWeight().getRawValue(),
+                    Long.parseLong(hudiSplit.getInstantTime()));
         }
         else {
             throw new TrinoException(HUDI_UNSUPPORTED_TABLE_TYPE, "Could not create page source for table type " + tableHandle.getTableType());
         }
-        return new HudiPageSource(
-                hiveColumns,
-                hudiSplit.getPartition().getKeyValues(),
-                dataColumnPageSource,
-                session.getTimeZoneKey(),
-                typeManager);
     }
 
     private static ConnectorPageSource createPageSource(
-            TypeManager typeManager,
-            HdfsEnvironment hdfsEnvironment,
             ConnectorSession session,
-            Configuration configuration,
-            Path path,
-            long start,
-            long length,
-            List<HiveColumnHandle> regularColumns,
-            TupleDomain<HiveColumnHandle> effectivePredicate,
-            FileFormatDataSourceStats fileFormatDataSourceStats,
+            List<HiveColumnHandle> columns,
             HudiSplit hudiSplit,
             TrinoInputFile inputFile,
+            FileFormatDataSourceStats dataSourceStats,
             ParquetReaderOptions options,
             DateTimeZone timeZone)
     {
         ParquetDataSource dataSource = null;
         boolean useColumnNames = shouldUseParquetColumnNames(session);
+        String path = hudiSplit.getBaseFile().get().getPath();
+        long start = hudiSplit.getBaseFile().get().getStart();
+        long length = hudiSplit.getBaseFile().get().getLength();
         try {
-            dataSource = new TrinoParquetDataSource(inputFile, options, fileFormatDataSourceStats);
+            dataSource = new TrinoParquetDataSource(inputFile, options, dataSourceStats);
             ParquetMetadata parquetMetadata = MetadataReader.readFooter(dataSource, Optional.empty());
             FileMetaData fileMetaData = parquetMetadata.getFileMetaData();
             MessageType fileSchema = fileMetaData.getSchema();
 
-            Optional<MessageType> message = getParquetMessageType(regularColumns, useColumnNames, fileSchema);
+            Optional<MessageType> message = getParquetMessageType(columns, useColumnNames, fileSchema);
 
             MessageType requestedSchema = message.orElse(new MessageType(fileSchema.getName(), ImmutableList.of()));
             MessageColumnIO messageColumn = getColumnIO(fileSchema, requestedSchema);
@@ -296,12 +317,12 @@ public class HudiPageSourceProvider
                 nextStart += block.getRowCount();
             }
 
-            Optional<ReaderColumns> readerProjections = projectBaseColumns(regularColumns);
+            Optional<ReaderColumns> readerProjections = projectBaseColumns(columns);
             List<HiveColumnHandle> baseColumns = readerProjections.map(projection ->
                             projection.get().stream()
                                     .map(HiveColumnHandle.class::cast)
                                     .collect(toUnmodifiableList()))
-                    .orElse(regularColumns);
+                    .orElse(columns);
             ParquetDataSourceId dataSourceId = dataSource.getId();
             ParquetDataSource finalDataSource = dataSource;
             ParquetReaderProvider parquetReaderProvider = fields -> new ParquetReader(
@@ -414,13 +435,13 @@ public class HudiPageSourceProvider
         }
     }
 
-    private static String toPartitionName(List<HivePartitionKey> partitions)
+    private static String toPartitionName(Map<String, String> partitions)
     {
         ImmutableList.Builder<String> partitionNames = ImmutableList.builderWithExpectedSize(partitions.size());
         ImmutableList.Builder<String> partitionValues = ImmutableList.builderWithExpectedSize(partitions.size());
-        for (HivePartitionKey partition : partitions) {
-            partitionNames.add(partition.getName());
-            partitionValues.add(partition.getValue());
+        for (Map.Entry<String, String> entry : partitions.entrySet()) {
+            partitionNames.add(entry.getKey());
+            partitionValues.add(entry.getValue());
         }
         return makePartName(partitionNames.build(), partitionValues.build());
     }

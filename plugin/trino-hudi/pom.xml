@@ -17,9 +17,11 @@
         <air.main.basedir>${project.parent.basedir}</air.main.basedir>
         <dep.hudi.version>0.14.0</dep.hudi.version>
         <dep.hbase.version>2.4.9</dep.hbase.version>
+        <dep.kryo.version>5.2.0</dep.kryo.version>
     </properties>
 
     <dependencies>
+        <!-- Add this dependency in your pom.xml file -->
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-databind</artifactId>
@@ -284,6 +286,19 @@
             <groupId>org.openjdk.jol</groupId>
             <artifactId>jol-core</artifactId>
             <scope>provided</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>com.esotericsoftware</groupId>
+            <artifactId>kryo</artifactId>
+            <version>${dep.kryo.version}</version>
+            <scope>runtime</scope>
+            <exclusions>
+                <exclusion>
+                    <groupId>*</groupId>
+                    <artifactId>*</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
 
         <dependency>

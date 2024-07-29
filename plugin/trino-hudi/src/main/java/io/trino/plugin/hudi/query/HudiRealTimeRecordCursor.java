@@ -93,14 +93,6 @@ public final class HudiRealTimeRecordCursor
             throw new TrinoException(HUDI_FILESYSTEM_ERROR, "Could not open file system for " + split.getTable(), e);
         }
 
-        /*Configuration conf = null;
-        HdfsContext hdfsContext = new HdfsContext(session);
-        try {
-            conf = hdfsEnvironment.getFileSystem(hdfsContext, new Path(split.getTable().getBasePath())).getConf();
-        }
-        catch (IOException e) {
-            throw new TrinoException(HUDI_FILESYSTEM_ERROR, "Could not open file system for " + split.getTable(), e);
-        }*/
         final Configuration configuration = conf;
         return hdfsEnvironment.doAs(session.getIdentity(), () -> {
             RecordReader<?, ?> recordReader = createRecordReader(configuration, schema, split, dataColumns);

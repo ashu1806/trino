@@ -13,7 +13,7 @@
  */
 package io.trino.plugin.hudi;
 
-import com.google.common.collect.ImmutableList;
+/*import com.google.common.collect.ImmutableList;
 import io.trino.hdfs.HdfsEnvironment;
 import io.trino.memory.context.AggregatedMemoryContext;
 import io.trino.parquet.ParquetDataSource;
@@ -70,7 +70,7 @@ public class HudiParquetPageSources
         AggregatedMemoryContext systemMemoryContext = newSimpleAggregatedMemoryContext();
 
         String user = session.getUser();
-        boolean readMaskedValue = getReadNullMaskedParquetEncryptedValue(session);
+        boolean readMaskedValue = false; //getReadNullMaskedParquetEncryptedValue(session);
         ParquetDataSource dataSource = null;
         try {
             FileSystem filesystem = hdfsEnvironment.getFileSystem(session.getIdentity(), path, configuration);
@@ -172,4 +172,4 @@ public class HudiParquetPageSources
             throw new PrestoException(HUDI_CANNOT_OPEN_SPLIT, message, e);
         }
     }
-}
+}*/
