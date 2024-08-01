@@ -59,9 +59,7 @@ import java.util.function.BiFunction;
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.collect.ImmutableMap.toImmutableMap;
 import static io.trino.plugin.hive.HivePartitionManager.extractPartitionValues;
-import static io.trino.plugin.hive.HiveSessionProperties.getTimestampPrecision;
 import static io.trino.plugin.hive.util.HiveUtil.getPartitionKeyColumnHandles;
-import static io.trino.plugin.hive.util.HiveUtil.getRegularColumnHandles;
 import static io.trino.plugin.hudi.HudiErrorCode.HUDI_INVALID_METADATA;
 import static io.trino.plugin.hudi.HudiMetadata.fromDataColumns;
 import static io.trino.plugin.hudi.HudiSessionProperties.getMaxOutstandingSplits;
@@ -182,7 +180,7 @@ public class HudiSplitManager
             Table table = metastore.getTable(databaseName, tableName)
                     .orElseThrow(() -> new TrinoException(HUDI_INVALID_METADATA, format("Table %s.%s expected but not found", databaseName, tableName)));
 
-            return new HudiPartition(partitionName, ImmutableList.of(), ImmutableMap.of(), table.getStorage(), getRegularColumnHandles(table, typeManager, getTimestampPrecision(session)));
+            return new HudiPartition(partitionName, ImmutableList.of(), ImmutableMap.of(), table.getStorage(), fromDataColumns(table.getDataColumns(), typeManager, table));
         }
         else {
             // The method extracts the partition values from the partitionName. This method splits the partitionName into individual partition values

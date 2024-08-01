@@ -15,13 +15,17 @@
 
     <properties>
         <air.main.basedir>${project.parent.basedir}</air.main.basedir>
-        <dep.hudi.version>0.14.0</dep.hudi.version>
-        <dep.hbase.version>2.4.9</dep.hbase.version>
-        <dep.kryo.version>5.2.0</dep.kryo.version>
+        <dep.hudi.version>0.14.1</dep.hudi.version>
+        <dep.kryo.version>4.0.2</dep.kryo.version>
     </properties>
 
     <dependencies>
-        <!-- Add this dependency in your pom.xml file -->
+        <dependency>
+            <groupId>com.esotericsoftware</groupId>
+            <artifactId>kryo-shaded</artifactId>
+            <version>${dep.kryo.version}</version>
+        </dependency>
+
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-databind</artifactId>
@@ -126,12 +130,6 @@
         <dependency>
             <groupId>io.trino.hive</groupId>
             <artifactId>hive-apache</artifactId>
-            <exclusions>
-                <exclusion>
-                    <groupId>org.apache.parquet</groupId>
-                    <artifactId>parquet-avro</artifactId>
-                </exclusion>
-            </exclusions>
         </dependency>
 
         <dependency>
@@ -159,6 +157,10 @@
             <artifactId>hudi-common</artifactId>
             <version>${dep.hudi.version}</version>
             <exclusions>
+                <!--<exclusion>
+                    <groupId>com.esotericsoftware</groupId>
+                    <artifactId>kryo-shaded</artifactId>
+                </exclusion>-->
                 <exclusion>
                     <groupId>com.fasterxml.jackson.core</groupId>
                     <artifactId>jackson-annotations</artifactId>
@@ -168,12 +170,16 @@
                     <artifactId>jackson-databind</artifactId>
                 </exclusion>
                 <exclusion>
-                    <groupId>com.github.ben-manes.caffeine</groupId>
-                    <artifactId>caffeine</artifactId>
+                    <groupId>commons-logging</groupId>
+                    <artifactId>commons-logging</artifactId>
                 </exclusion>
                 <exclusion>
-                    <groupId>org.apache.commons</groupId>
-                    <artifactId>commons-lang3</artifactId>
+                    <groupId>javax.annotation</groupId>
+                    <artifactId>javax.annotation-api</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>javax.inject</groupId>
+                    <artifactId>javax.inject</artifactId>
                 </exclusion>
                 <exclusion>
                     <groupId>org.apache.hadoop</groupId>
@@ -182,14 +188,6 @@
                 <exclusion>
                     <groupId>org.apache.hadoop</groupId>
                     <artifactId>hadoop-hdfs</artifactId>
-                </exclusion>
-                <exclusion>
-                    <groupId>org.apache.hbase</groupId>
-                    <artifactId>hbase-client</artifactId>
-                </exclusion>
-                <exclusion>
-                    <groupId>org.apache.hbase</groupId>
-                    <artifactId>hbase-server</artifactId>
                 </exclusion>
                 <exclusion>
                     <groupId>org.apache.hive</groupId>
@@ -242,11 +240,6 @@
             </exclusions>
         </dependency>
 
-        <!--<dependency>
-            <groupId>org.apache.parquet</groupId>
-            <artifactId>parquet-column</artifactId>
-        </dependency>-->
-
         <dependency>
             <groupId>org.weakref</groupId>
             <artifactId>jmxutils</artifactId>
@@ -289,19 +282,6 @@
         </dependency>
 
         <dependency>
-            <groupId>com.esotericsoftware</groupId>
-            <artifactId>kryo</artifactId>
-            <version>${dep.kryo.version}</version>
-            <scope>runtime</scope>
-            <exclusions>
-                <exclusion>
-                    <groupId>*</groupId>
-                    <artifactId>*</artifactId>
-                </exclusion>
-            </exclusions>
-        </dependency>
-
-        <dependency>
             <groupId>io.airlift</groupId>
             <artifactId>log-manager</artifactId>
             <scope>runtime</scope>
@@ -311,45 +291,6 @@
             <groupId>io.trino</groupId>
             <artifactId>trino-hadoop-toolkit</artifactId>
             <scope>runtime</scope>
-        </dependency>
-
-        <dependency>
-            <groupId>org.apache.hbase</groupId>
-            <artifactId>hbase-client</artifactId>
-            <version>${dep.hbase.version}</version>
-            <scope>runtime</scope>
-            <exclusions>
-                <exclusion>
-                    <groupId>*</groupId>
-                    <artifactId>*</artifactId>
-                </exclusion>
-            </exclusions>
-        </dependency>
-
-        <dependency>
-            <groupId>org.apache.hbase</groupId>
-            <artifactId>hbase-common</artifactId>
-            <version>${dep.hbase.version}</version>
-            <scope>runtime</scope>
-            <exclusions>
-                <exclusion>
-                    <groupId>*</groupId>
-                    <artifactId>*</artifactId>
-                </exclusion>
-            </exclusions>
-        </dependency>
-
-        <dependency>
-            <groupId>org.apache.hbase</groupId>
-            <artifactId>hbase-server</artifactId>
-            <version>${dep.hbase.version}</version>
-            <scope>runtime</scope>
-            <exclusions>
-                <exclusion>
-                    <groupId>*</groupId>
-                    <artifactId>*</artifactId>
-                </exclusion>
-            </exclusions>
         </dependency>
 
         <dependency>
@@ -421,44 +362,74 @@
             <scope>test</scope>
         </dependency>
 
-        <!--<dependency>
-            <groupId>org.apache.hbase</groupId>
-            <artifactId>hbase-client</artifactId>
-            <version>${dep.hbase.version}</version>
+        <dependency>
+            <groupId>org.apache.hudi</groupId>
+            <artifactId>hudi-client-common</artifactId>
+            <version>${dep.hudi.version}</version>
             <scope>test</scope>
             <exclusions>
                 <exclusion>
-                    <groupId>*</groupId>
+                    <groupId>com.beust</groupId>
+                    <artifactId>jcommander</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>com.github.davidmoten</groupId>
+                    <artifactId>hilbert-curve</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>commons-logging</groupId>
+                    <artifactId>commons-logging</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>io.dropwizard.metrics</groupId>
                     <artifactId>*</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>io.dropwizard.metrics</groupId>
+                    <artifactId>metrics-core</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>io.prometheus</groupId>
+                    <artifactId>*</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>log4j</groupId>
+                    <artifactId>log4j</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>org.apache.curator</groupId>
+                    <artifactId>curator-client</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>org.apache.curator</groupId>
+                    <artifactId>curator-framework</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>org.apache.curator</groupId>
+                    <artifactId>curator-recipes</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>org.apache.hive</groupId>
+                    <artifactId>hive-service</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>org.apache.hudi</groupId>
+                    <artifactId>hudi-common</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>org.apache.hudi</groupId>
+                    <artifactId>hudi-hive-sync</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>org.apache.hudi</groupId>
+                    <artifactId>hudi-timeline-service</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>org.apache.parquet</groupId>
+                    <artifactId>parquet-avro</artifactId>
                 </exclusion>
             </exclusions>
         </dependency>
-
-        <dependency>
-            <groupId>org.apache.hbase</groupId>
-            <artifactId>hbase-common</artifactId>
-            <version>${dep.hbase.version}</version>
-            <scope>test</scope>
-            <exclusions>
-                <exclusion>
-                    <groupId>*</groupId>
-                    <artifactId>*</artifactId>
-                </exclusion>
-            </exclusions>
-        </dependency>
-
-        <dependency>
-            <groupId>org.apache.hbase</groupId>
-            <artifactId>hbase-server</artifactId>
-            <version>${dep.hbase.version}</version>
-            <scope>test</scope>
-            <exclusions>
-                <exclusion>
-                    <groupId>*</groupId>
-                    <artifactId>*</artifactId>
-                </exclusion>
-            </exclusions>
-        </dependency>-->
 
         <dependency>
             <groupId>org.apache.hudi</groupId>
@@ -469,6 +440,10 @@
                 <exclusion>
                     <groupId>org.apache.hudi</groupId>
                     <artifactId>*</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>org.apache.parquet</groupId>
+                    <artifactId>parquet-avro</artifactId>
                 </exclusion>
             </exclusions>
         </dependency>
@@ -503,16 +478,6 @@
                         <ignoredResourcePattern>log4j.properties</ignoredResourcePattern>
                         <ignoredResourcePattern>log4j-surefire.properties</ignoredResourcePattern>
                     </ignoredResourcePatterns>
-                    <!--<ignoredDependencies>
-                        <ignoredDependency>
-                            <groupId>org.apache.hudi</groupId>
-                            <artifactId>hudi-common</artifactId>
-                        </ignoredDependency>
-                        <ignoredDependency>
-                            <groupId>org.apache.hudi</groupId>
-                            <artifactId>hudi-client-common</artifactId>
-                        </ignoredDependency>
-                    </ignoredDependencies>-->
                 </configuration>
             </plugin>
         </plugins>

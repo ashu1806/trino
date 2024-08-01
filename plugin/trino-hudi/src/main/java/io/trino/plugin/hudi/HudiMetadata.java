@@ -265,7 +265,22 @@ public class HudiMetadata
     @Override
     public void validateScan(ConnectorSession session, ConnectorTableHandle handle)
     {
-        System.out.println("no valid scan");
+        /*HudiTableHandle hudiTableHandle = (HudiTableHandle) handle;
+        if (isQueryPartitionFilterRequired(session)) {
+            if (!hudiTableHandle.getPartitionColumns().isEmpty()) {
+                Set<String> partitionColumns = hudiTableHandle.getPartitionColumns().stream()
+                        .map(HiveColumnHandle::getName)
+                        .collect(toImmutableSet());
+                Set<String> constraintColumns = hudiTableHandle.getConstraintColumns().stream()
+                        .map(HiveColumnHandle::getBaseColumnName)
+                        .collect(toImmutableSet());
+                if (Collections.disjoint(constraintColumns, partitionColumns)) {
+                    throw new TrinoException(
+                            QUERY_REJECTED,
+                            format("Filter required on %s for at least one of the partition columns: %s", hudiTableHandle.getSchemaTableName(), String.join(", ", partitionColumns)));
+                }
+            }
+        }*/
     }
 
     HiveMetastore getMetastore()
